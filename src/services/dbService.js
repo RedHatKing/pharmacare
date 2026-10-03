@@ -731,81 +731,10 @@ const createMockDriver = () => {
   };
 };
 
+// Removed `better-sqlite3` native driver from frontend code. Node native bindings cannot run in browser/renderer.
+// Keep a placeholder that returns null in non-Tauri renderer environments. The Tauri plugin driver is used when available.
 const createSqliteDriver = async (databaseDirectoryOverride = null) => {
-  if (typeof window !== 'undefined') return null;
-
-  try {
-    const { default: Database } = await import('better-sqlite3');
-    if (!Database) return null;
-
-    const targetDirectory = normalizeDatabaseDirectory(databaseDirectoryOverride || await getConfiguredDatabaseDirectory()) || await getDefaultDatabaseDirectory();
-    const dbPath = buildDatabaseFilePath(targetDirectory);
-    const db = new Database(dbPath);
-
-    const resetAppSchema = () => {
-      try {
-        db.exec(`
-          DROP TABLE IF EXISTS purchase_order_items;
-          DROP TABLE IF EXISTS purchase_orders;
-          DROP TABLE IF EXISTS sale_items;
-          DROP TABLE IF EXISTS sales;
-          DROP TABLE IF EXISTS medicines;
-          DROP TABLE IF EXISTS suppliers;
-          DROP TABLE IF EXISTS batches;
-          DROP TABLE IF EXISTS settings;
-        `);
-      } catch {
-        // ignore if legacy tables are not present
-      }
-    };
-
-    return {
-      async init() {
-        try {
-          const tableInfo = db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN ('suppliers', 'medicines', 'settings', 'sales', 'sale_items', 'purchase_orders', 'purchase_order_items', 'batches')").all();
-          const hasLegacySchema = tableInfo.some((row) => {
-            const lowerSql = String(row.sql || '').toLowerCase();
-            return row.name === 'suppliers' && lowerSql.includes('id integer') && lowerSql.includes('primary key');
-          });
-
-          if (hasLegacySchema) {
-            resetAppSchema();
-          }
-
-          db.exec(MEDICINES_SCHEMA_SQL);
-        } catch {
-          // ignore legacy schema issues and rely on the migration step below
-        }
-        return true;
-      },
-      reset() {
-        try {
-          resetAppSchema();
-        } catch {
-          // older SQLite databases may not have every table yet; migration will recreate them
-        }
-        return true;
-      },
-      async all(sql, params = []) {
-        const stmt = db.prepare(sql);
-        const values = Array.isArray(params) ? params : [params];
-        return stmt.all(...values);
-      },
-      async get(sql, params = []) {
-        const stmt = db.prepare(sql);
-        const values = Array.isArray(params) ? params : [params];
-        return stmt.get(...values) || null;
-      },
-      async run(sql, params = []) {
-        const stmt = db.prepare(sql);
-        const values = Array.isArray(params) ? params : [params];
-        const result = stmt.run(...values);
-        return { lastID: result.lastInsertRowid || null, changes: result.changes || 0 };
-      },
-    };
-  } catch (error) {
-    return null;
-  }
+  return null;
 };
 
 const isTauriRuntime = () => {
