@@ -26,3 +26,30 @@ with open('src-tauri/icons/icon.png', 'wb') as f:
     f.write(png)
 
 print('created src-tauri/icons/icon.png')
+
+# Also create a simple .ico containing this PNG (Windows supports PNG-compressed images inside ICO)
+try:
+    png_data = png
+    # ICONDIR header: reserved (2 bytes), type (2 bytes), count (2 bytes)
+    icon_dir = struct.pack('<HHH', 0, 1, 1)
+
+    # ICONDIRENTRY: width(1), height(1), color count(1), reserved(1), planes(2), bitcount(2), bytes in resource(4), image offset(4)
+    width_byte = 0 if width == 256 else width
+    height_byte = 0 if height == 256 else height
+    color_count = 0
+    reserved = 0
+    planes = 1
+    bitcount = 32
+    bytes_in_res = len(png_data)
+    image_offset = 6 + 16  # ICONDIR (6 bytes) + one ICONDIRENTRY (16 bytes)
+
+    entry = struct.pack('<BBBBHHII', width_byte, height_byte, color_count, reserved, planes, bitcount, bytes_in_res, image_offset)
+
+    ico = icon_dir + entry + png_data
+
+    with open('src-tauri/icons/icon.ico', 'wb') as f:
+        f.write(ico)
+
+    print('created src-tauri/icons/icon.ico')
+except Exception as e:
+    print('failed to create icon.ico:', e)
