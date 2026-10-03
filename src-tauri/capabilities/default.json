@@ -1,0 +1,15 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "identifier": "default",
+  "description": "Default Tauri capabilities for PharmaCare on Windows",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    "path:default",
+    "sql:default"
+  ]
+}

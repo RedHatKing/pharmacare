@@ -1,0 +1,6 @@
+{
+  "name": "PharmaCare - Medical Store Management System",
+  "description": "Production-ready pharmacy inventory, parties management, POS billing, expiry tracker, and store administration system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
