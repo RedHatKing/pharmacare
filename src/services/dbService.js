@@ -222,19 +222,49 @@ const normalizeDatabaseDirectory = (directoryPath = '') => {
   return value.replace(/[\\/]+$/, '');
 };
 
+const notifyDatabasePathError = (message, details = '') => {
+  const errorMessage = details ? `${message}: ${details}` : message;
+  console.error('[PharmaCare DB]', errorMessage);
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pharmacare-db-error', { detail: errorMessage }));
+    try {
+      window.alert(errorMessage);
+    } catch {
+      // ignore alert failures in non-browser or restricted contexts
+    }
+  }
+
+  return errorMessage;
+};
+
 const ensureDatabaseDirectoryExists = async (directoryPath = '') => {
   const targetDirectory = normalizeDatabaseDirectory(directoryPath);
-  if (!targetDirectory) return null;
+  if (!targetDirectory) {
+    throw new Error('Database directory is empty.');
+  }
 
   try {
     const fs = await import('@tauri-apps/plugin-fs');
     const mkdir = fs?.mkdir || fs?.default?.mkdir;
+    const exists = fs?.exists || fs?.default?.exists;
+
     if (typeof mkdir === 'function') {
       await mkdir(targetDirectory.replace(/\\/g, '/'), { recursive: true });
     }
+
+    if (typeof exists === 'function') {
+      const directoryExists = await exists(targetDirectory.replace(/\\/g, '/')).catch(() => false);
+      if (!directoryExists) {
+        throw new Error(`Failed to create database directory: ${targetDirectory}`);
+      }
+    }
+
     return targetDirectory;
-  } catch {
-    return null;
+  } catch (error) {
+    const reason = error?.message || 'Unknown filesystem error';
+    notifyDatabasePathError(`The database folder could not be created: ${targetDirectory}`, reason);
+    throw new Error(`The database folder could not be created: ${targetDirectory}. ${reason}`);
   }
 };
 
@@ -796,9 +826,19 @@ const createTauriSqliteDriver = async (databaseDirectoryOverride = null) => {
     if (!Database || typeof Database.load !== 'function') return null;
 
     const targetDirectory = normalizeDatabaseDirectory(databaseDirectoryOverride || await getConfiguredDatabaseDirectory()) || await getDefaultDatabaseDirectory();
+    console.info('[PharmaCare DB] initializing SQLite path:', targetDirectory);
     await ensureDatabaseDirectoryExists(targetDirectory);
     const dbFilePath = buildDatabaseFilePath(targetDirectory);
+    console.info('[PharmaCare DB] SQLite file target:', dbFilePath);
+
+    const fs = await import('@tauri-apps/plugin-fs');
+    const exists = fs?.exists || fs?.default?.exists;
+    const fileExists = typeof exists === 'function' ? await exists(dbFilePath.replace(/\\/g, '/')).catch(() => false) : false;
+    console.info('[PharmaCare DB] file exists before load:', fileExists, 'path:', dbFilePath);
+
     const db = await Database.load(toSqliteUri(dbFilePath));
+    console.info('[PharmaCare DB] SQLite connection opened successfully for:', dbFilePath);
+    return db;
     const executeScript = async (script) => {
       const statements = String(script)
         .split(';')
@@ -928,7 +968,14 @@ async function setDatabaseLocation(directoryPath, options = {}) {
   const currentDatabaseFile = buildDatabaseFilePath(currentDirectory);
   const nextDatabaseFile = buildDatabaseFilePath(nextDirectory);
 
-  await ensureDatabaseDirectoryExists(nextDirectory);
+  console.info('[PharmaCare DB] setting database directory to:', nextDirectory);
+
+  try {
+    await ensureDatabaseDirectoryExists(nextDirectory);
+  } catch (error) {
+    notifyDatabasePathError('Database location change failed.', error?.message || 'Directory creation failed.');
+    throw error;
+  }
 
   if (moveExisting && currentDatabaseFile !== nextDatabaseFile) {
     try {
@@ -938,6 +985,8 @@ async function setDatabaseLocation(directoryPath, options = {}) {
         ? await exists(currentDatabaseFile).catch(() => false)
         : false;
 
+      console.info('[PharmaCare DB] moving existing database:', { from: currentDatabaseFile, to: nextDatabaseFile, sourceExists });
+
       if (sourceExists) {
         const migrated = await moveDatabaseFileIfNeeded(currentDatabaseFile, nextDatabaseFile);
         if (!migrated) {
@@ -945,16 +994,22 @@ async function setDatabaseLocation(directoryPath, options = {}) {
         }
       }
     } catch (error) {
-      throw new Error(error?.message || 'The selected folder is not writable or not accessible.');
+      const message = error?.message || 'The selected folder is not writable or not accessible.';
+      notifyDatabasePathError('Database move failed.', message);
+      throw new Error(message);
     }
   }
 
   await persistDatabaseDirectory(nextDirectory);
   await init();
 
+  const finalPath = normalizeDatabaseDirectory(nextDirectory);
+  const finalFilePath = buildDatabaseFilePath(finalPath);
+  console.info('[PharmaCare DB] directory ready and DB path persisted:', finalFilePath);
+
   return {
-    path: nextDirectory,
-    filePath: nextDatabaseFile,
+    path: finalPath,
+    filePath: finalFilePath,
   };
 }
 

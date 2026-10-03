@@ -67,6 +67,18 @@ export const Settings: React.FC = () => {
     };
   }, [settings.databasePath]);
 
+  useEffect(() => {
+    const handleDbError = (event: Event) => {
+      const customEvent = event as CustomEvent<string>;
+      const message = customEvent.detail || 'Database initialization failed.';
+      setNotification({ type: 'error', message });
+      setTimeout(() => setNotification(null), 5000);
+    };
+
+    window.addEventListener('pharmacare-db-error', handleDbError);
+    return () => window.removeEventListener('pharmacare-db-error', handleDbError);
+  }, []);
+
   const handleSaveStoreProfile = (e: React.FormEvent) => {
     e.preventDefault();
     updateSettings({
