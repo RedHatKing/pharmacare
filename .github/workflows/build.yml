@@ -20,15 +20,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
 
       - name: Setup Rust toolchain (stable)
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
+          targets: x86_64-pc-windows-msvc
 
       - name: Install frontend dependencies
         run: npm install --legacy-peer-deps
@@ -38,9 +36,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          platform: windows
-          targets: nsis,msi
-          release: false
           args: --target x86_64-pc-windows-msvc
 
       - name: Upload Windows bundle artifact
