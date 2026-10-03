@@ -2,8 +2,10 @@ use serde_json::{json, Map, Number, Value};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+#[derive(Default)]
+struct AppDb(pub Mutex<Option<rusqlite::Connection>>);
+
 static DB_LOCATION: OnceLock<Mutex<String>> = OnceLock::new();
-static DB_CONNECTION: OnceLock<Mutex<Option<rusqlite::Connection>>> = OnceLock::new();
 
 fn default_db_directory() -> String {
     "E:/PharmaCare Database".to_string()
@@ -11,10 +13,6 @@ fn default_db_directory() -> String {
 
 fn get_db_location_state() -> &'static Mutex<String> {
     DB_LOCATION.get_or_init(|| Mutex::new(default_db_directory()))
-}
-
-fn get_db_connection_state() -> &'static Mutex<Option<rusqlite::Connection>> {
-    DB_CONNECTION.get_or_init(|| Mutex::new(None))
 }
 
 fn normalize_directory_path(path: &str) -> Result<String, String> {
@@ -85,11 +83,9 @@ fn resolve_database_file(path: &str) -> Result<PathBuf, String> {
     Ok(directory.join("pharmacare.db"))
 }
 
-fn ensure_database_connection(path: &str) -> Result<(), String> {
+fn ensure_database_connection(path: &str, state: &AppDb) -> Result<(), String> {
     let normalized_path = normalize_directory_path(path)?;
-    let mut connection_state = get_db_connection_state()
-        .lock()
-        .map_err(|error| error.to_string())?;
+    let mut connection_state = state.0.lock().map_err(|error| error.to_string())?;
 
     if connection_state.is_some() {
         let active_path = get_db_location_state()
@@ -181,12 +177,12 @@ fn create_database_dir(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn set_db_location(path: String) -> Result<String, String> {
+fn set_db_location(path: String, state: tauri::State<'_, AppDb>) -> Result<String, String> {
     let normalized_path = normalize_directory_path(&path)?;
     let resolved_dir = resolve_database_directory(&normalized_path)?;
     let final_path = resolved_dir.to_string_lossy().replace('\\', "/");
 
-    ensure_database_connection(&final_path)?;
+    ensure_database_connection(&final_path, &state)?;
     Ok(final_path)
 }
 
@@ -204,7 +200,11 @@ fn get_db_location() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn execute_sql(sql: String, params: Vec<Value>) -> Result<Value, String> {
+fn execute_sql(
+    sql: String,
+    params: Vec<Value>,
+    state: tauri::State<'_, AppDb>,
+) -> Result<Value, String> {
     let active_path = get_db_location_state()
         .lock()
         .map_err(|error| error.to_string())?;
@@ -215,11 +215,9 @@ fn execute_sql(sql: String, params: Vec<Value>) -> Result<Value, String> {
     };
     drop(active_path);
 
-    ensure_database_connection(&path_for_query)?;
+    ensure_database_connection(&path_for_query, &state)?;
 
-    let mut connection_guard = get_db_connection_state()
-        .lock()
-        .map_err(|error| error.to_string())?;
+    let mut connection_guard = state.0.lock().map_err(|error| error.to_string())?;
     let connection = connection_guard.as_mut().ok_or_else(|| {
         format!(
             "No SQLite database connection is initialized for '{}'.",
@@ -243,7 +241,11 @@ fn execute_sql(sql: String, params: Vec<Value>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn select_sql_all(sql: String, params: Vec<Value>) -> Result<Vec<Value>, String> {
+fn select_sql_all(
+    sql: String,
+    params: Vec<Value>,
+    state: tauri::State<'_, AppDb>,
+) -> Result<Vec<Value>, String> {
     let active_path = get_db_location_state()
         .lock()
         .map_err(|error| error.to_string())?;
@@ -254,11 +256,9 @@ fn select_sql_all(sql: String, params: Vec<Value>) -> Result<Vec<Value>, String>
     };
     drop(active_path);
 
-    ensure_database_connection(&path_for_query)?;
+    ensure_database_connection(&path_for_query, &state)?;
 
-    let mut connection_guard = get_db_connection_state()
-        .lock()
-        .map_err(|error| error.to_string())?;
+    let mut connection_guard = state.0.lock().map_err(|error| error.to_string())?;
     let connection = connection_guard.as_mut().ok_or_else(|| {
         format!(
             "No SQLite database connection is initialized for '{}'.",
@@ -293,8 +293,12 @@ fn select_sql_all(sql: String, params: Vec<Value>) -> Result<Vec<Value>, String>
 }
 
 #[tauri::command]
-fn select_sql_get(sql: String, params: Vec<Value>) -> Result<Value, String> {
-    let rows = select_sql_all(sql, params)?;
+fn select_sql_get(
+    sql: String,
+    params: Vec<Value>,
+    state: tauri::State<'_, AppDb>,
+) -> Result<Value, String> {
+    let rows = select_sql_all(sql, params, state)?;
     if rows.is_empty() {
         Ok(Value::Null)
     } else {
@@ -304,6 +308,7 @@ fn select_sql_get(sql: String, params: Vec<Value>) -> Result<Value, String> {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(AppDb::default())
         .invoke_handler(tauri::generate_handler![
             create_database_dir,
             set_db_location,
