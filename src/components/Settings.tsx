@@ -3,8 +3,6 @@ import { useInventory } from '../context/InventoryContext';
 import dbService from '../services/dbService';
 import {
   Settings as SettingsIcon,
-  Moon,
-  Sun,
   Download,
   Upload,
   Store,
@@ -84,10 +82,6 @@ export const Settings: React.FC = () => {
 
     setNotification({ type: 'success', message: 'Store details saved successfully.' });
     setTimeout(() => setNotification(null), 3000);
-  };
-
-  const handleThemeToggle = (newTheme: 'light' | 'dark') => {
-    updateSettings({ theme: newTheme });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -235,47 +229,6 @@ export const Settings: React.FC = () => {
           <span>{notification.message}</span>
         </div>
       )}
-
-      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 p-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
-              Screen Theme
-            </p>
-            <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-              Choose between light background or dark mode
-            </p>
-          </div>
-
-          <div className="flex items-center border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-0.5">
-            <button
-              type="button"
-              onClick={() => handleThemeToggle('light')}
-              className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all ${
-                settings.theme === 'light'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Sun className="w-3.5 h-3.5 text-amber-500" />
-              <span>Light Mode</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleThemeToggle('dark')}
-              className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all ${
-                settings.theme === 'dark'
-                  ? 'bg-slate-700 text-white shadow-xs'
-                  : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <Moon className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Dark Mode</span>
-            </button>
-          </div>
-        </div>
-      </div>
 
       <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 p-5 space-y-4">
         <div>

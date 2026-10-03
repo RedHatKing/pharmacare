@@ -37,7 +37,7 @@
     ,
     "windows": {
       "webviewInstallMode": {
-        "type": "offlineInstaller"
+        "type": "downloadBootstrapper"
       }
     }
   }

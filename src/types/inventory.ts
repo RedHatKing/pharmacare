@@ -96,7 +96,6 @@ export interface StoreSettings {
   dlNumber: string;
   gstNumber: string;
   currencySymbol: string;
-  theme: 'light' | 'dark';
   defaultTaxRate: number;
   databasePath?: string;
 }

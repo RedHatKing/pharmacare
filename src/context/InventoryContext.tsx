@@ -68,7 +68,6 @@ const DEFAULT_SETTINGS: StoreSettings = {
   dlNumber: 'DL-20B/14589 & DL-21B/14590',
   gstNumber: '07AAAAA0000A1Z5',
   currencySymbol: 'Rs.',
-  theme: 'light',
   defaultTaxRate: 0,
   databasePath: '',
 };
@@ -230,7 +229,6 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const nextSettings: StoreSettings = {
           ...DEFAULT_SETTINGS,
           ...savedSettings,
-          theme: savedSettings.theme === 'dark' ? 'dark' : 'light',
         };
         setSettings(nextSettings);
       }
@@ -297,11 +295,9 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.error('Failed to save settings to localStorage', e);
     }
 
-    if (settings.theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.remove('dark');
+    document.body.classList.remove('dark');
+    document.documentElement.style.colorScheme = 'light';
   }, [settings]);
 
   const addProduct = (productData: Omit<Product, 'id' | 'createdAt'>, options: { skipDbInsert?: boolean } = {}): Product => {
@@ -635,7 +631,6 @@ export const InventoryProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const nextSettings: StoreSettings = {
           ...DEFAULT_SETTINGS,
           ...parsed.settings,
-          theme: parsed.settings.theme === 'dark' ? 'dark' : 'light',
         };
         setSettings(nextSettings);
         localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(nextSettings));

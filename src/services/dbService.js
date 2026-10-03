@@ -287,8 +287,8 @@ const moveDatabaseFileIfNeeded = async (sourceFilePath, targetFilePath) => {
     const fs = await import('@tauri-apps/plugin-fs');
     const rename = fs?.rename || fs?.default?.rename;
     const mkdir = fs?.mkdir || fs?.default?.mkdir;
-
-    if (typeof rename !== 'function') return false;
+    const exists = fs?.exists || fs?.default?.exists;
+    const copyFile = fs?.copyFile || fs?.default?.copyFile;
 
     const normalizedSource = String(sourceFilePath).replace(/\\/g, '/');
     const normalizedTarget = String(targetFilePath).replace(/\\/g, '/');
@@ -298,8 +298,24 @@ const moveDatabaseFileIfNeeded = async (sourceFilePath, targetFilePath) => {
       try { await mkdir(targetDir, { recursive: true }); } catch { /* ignore */ }
     }
 
-    await rename(normalizedSource, normalizedTarget);
-    return true;
+    if (typeof rename === 'function') {
+      try {
+        await rename(normalizedSource, normalizedTarget);
+        return true;
+      } catch {
+        // Fall back to a copy when the OS blocks rename semantics or a file exists at target.
+      }
+    }
+
+    if (typeof copyFile === 'function' && typeof exists === 'function') {
+      const targetExists = await exists(normalizedTarget).catch(() => false);
+      if (!targetExists) {
+        await copyFile(normalizedSource, normalizedTarget);
+        return true;
+      }
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -884,12 +900,20 @@ async function setDatabaseLocation(directoryPath, options = {}) {
 
   if (moveExisting && currentDatabaseFile !== nextDatabaseFile) {
     try {
-      const sourceExists = typeof window !== 'undefined' && window.__TAURI__ ? await (await import('@tauri-apps/plugin-fs')).exists(currentDatabaseFile).catch(() => false) : false;
+      const fs = await import('@tauri-apps/plugin-fs');
+      const exists = fs?.exists || fs?.default?.exists;
+      const sourceExists = typeof window !== 'undefined' && window.__TAURI__ && typeof exists === 'function'
+        ? await exists(currentDatabaseFile).catch(() => false)
+        : false;
+
       if (sourceExists) {
-        await moveDatabaseFileIfNeeded(currentDatabaseFile, nextDatabaseFile);
+        const migrated = await moveDatabaseFileIfNeeded(currentDatabaseFile, nextDatabaseFile);
+        if (!migrated) {
+          throw new Error('Unable to move the existing database to the selected directory.');
+        }
       }
-    } catch {
-      // Allow the app to continue even if file transfer is blocked.
+    } catch (error) {
+      throw new Error(error?.message || 'The selected folder is not writable or not accessible.');
     }
   }
 
@@ -911,6 +935,7 @@ async function pickDatabaseDirectory(currentPath = '') {
     const { open } = await import('@tauri-apps/plugin-dialog');
     const directoryPath = await open({
       directory: true,
+      recursive: false,
       multiple: false,
       defaultPath: normalizeDatabaseDirectory(currentPath) || (await getCurrentDatabaseDirectory()),
     });

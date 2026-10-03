@@ -17,8 +17,6 @@ import {
   Settings as SettingsIcon,
   ShieldAlert,
   Phone,
-  Moon,
-  Sun,
   Activity,
   ClipboardList,
   AlertTriangle
@@ -39,6 +37,12 @@ const MainLayout: React.FC = () => {
   const lowStockCount = getLowStockProducts().length;
   const outOfStockCount = getOutOfStockProducts().length;
   const reorderAlertCount = lowStockCount + outOfStockCount;
+
+  useEffect(() => {
+    document.documentElement.classList.remove('dark');
+    document.body.classList.remove('dark');
+    document.documentElement.style.colorScheme = 'light';
+  }, []);
 
   // Keyboard shortcut support F1 - F7
   useEffect(() => {
@@ -263,23 +267,7 @@ const MainLayout: React.FC = () => {
               <Phone className="w-3 h-3 text-slate-400 shrink-0" />
               <span>{settings.phone}</span>
             </span>
-            <button
-              onClick={() => updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
-              className="px-2 py-0.5 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors text-slate-700 dark:text-slate-300 flex items-center gap-1 text-[10.5px] font-sans"
-              title="Toggle theme"
-            >
-              {settings.theme === 'dark' ? (
-                <>
-                  <Sun className="w-3 h-3 text-amber-400" />
-                  <span>Light</span>
-                </>
-              ) : (
-                <>
-                  <Moon className="w-3 h-3 text-slate-600" />
-                  <span>Dark</span>
-                </>
-              )}
-            </button>
+
           </div>
           <div className="text-[10px] text-slate-400 flex items-center justify-between border-t border-slate-200 dark:border-slate-800 pt-1.5">
             <span>GSTIN: {settings.gstNumber}</span>
@@ -325,12 +313,7 @@ const MainLayout: React.FC = () => {
             </button>
           )}
 
-          <button
-            onClick={() => updateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
-            className="p-1.5 border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800"
-          >
-            {settings.theme === 'dark' ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-600" />}
-          </button>
+
         </div>
       </header>
 

@@ -8,6 +8,12 @@
   "permissions": [
     "core:default",
     "sql:default",
-    "dialog:default"
+    "dialog:default",
+    "dialog:allow-open",
+    "fs:default",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-mkdir",
+    "fs:allow-exists"
   ]
 }
