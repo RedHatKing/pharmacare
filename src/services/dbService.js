@@ -181,7 +181,7 @@ const normalizeSupplierRow = (row = {}) => ({
 
 const DEFAULT_STORE_SETTINGS = {
   id: 'settings',
-  storeName: 'Sanjeevani Medicos & Healthcare',
+  storeName: 'Bahawalpur Medical Store',
   tagline: 'Licensed Retail & Wholesale Chemist',
   address: 'Shop No. 12-14, Health Plaza, Ring Road, New Delhi 110024',
   phone: '+91 98765 43210',
@@ -261,7 +261,7 @@ const getFallbackDatabaseDirectories = async () => {
 
 const createDatabaseDirectoryWithRust = async (directoryPath = '') => {
   const targetDirectory = normalizeDatabaseDirectory(directoryPath);
-  if (!targetDirectory || typeof window === 'undefined' || !window.__TAURI__) {
+  if (!targetDirectory || !isTauriRuntime()) {
     return targetDirectory;
   }
 
@@ -272,6 +272,11 @@ const createDatabaseDirectoryWithRust = async (directoryPath = '') => {
 };
 
 const ensureDatabaseDirectoryExists = async (directoryPath = '', options = {}) => {
+  if (!isTauriRuntime()) {
+    console.info('[PharmaCare DB] Browser environment detected. Skipping native directory creation.');
+    return true;
+  }
+
   const { suppressErrorEvent = false } = options;
   const preferredDirectory = normalizeDatabaseDirectory(directoryPath);
   const candidates = [preferredDirectory, ...(await getFallbackDatabaseDirectories())];
@@ -298,8 +303,10 @@ const ensureDatabaseDirectoryExists = async (directoryPath = '', options = {}) =
     }
   }
 
-  const reason = lastError?.message || 'Unknown filesystem error';
-  const finalMessage = `The database folder could not be created: ${preferredDirectory || 'default database directory'}. ${reason}`;
+  const reason = typeof lastError === 'string'
+    ? lastError
+    : (lastError?.message || String(lastError || ''));
+  const finalMessage = `The database folder could not be created: ${preferredDirectory || 'default database directory'}. ${reason || 'Unknown filesystem error'}`;
 
   if (!suppressErrorEvent) {
     notifyDatabasePathError('The database folder could not be created.', finalMessage);
@@ -434,7 +441,13 @@ const getCurrentDatabaseDirectory = async () => getConfiguredDatabaseDirectory()
 const getCurrentDatabaseFilePath = async () => buildDatabaseFilePath(await getConfiguredDatabaseDirectory());
 
 const resetDatabaseDirectory = async () => {
-  const defaultDirectory = await getDefaultDatabaseDirectory();
+  const defaultDirectory = normalizeDatabaseDirectory(DEFAULT_WINDOWS_DATABASE_DIRECTORY) || 'E:/PharmaCare Database';
+  try {
+    await ensureDatabaseDirectoryExists(defaultDirectory, { suppressErrorEvent: true });
+  } catch {
+    // ignore default directory creation failures and keep the requested reset path
+  }
+
   await persistDatabaseDirectory(defaultDirectory);
   return defaultDirectory;
 };
@@ -864,82 +877,81 @@ const createSqliteDriver = async (databaseDirectoryOverride = null) => {
 
 const isTauriRuntime = () => {
   if (typeof window === 'undefined') return false;
-  return Boolean(window.__TAURI__ || window.__TAURI_INTERNALS__);
+  return Boolean(window.__TAURI__ || window.__TAURI_INTERNALS__ || window.__TAURI_IPC__);
 };
 
 const createTauriSqliteDriver = async (databaseDirectoryOverride = null) => {
   if (!isTauriRuntime()) return null;
 
   try {
-    const sqlPlugin = await import('@tauri-apps/plugin-sql');
-    const Database = sqlPlugin.default || sqlPlugin.Database;
-    if (!Database || typeof Database.load !== 'function') return null;
+    const { invoke } = await import('@tauri-apps/api/core');
 
-    const targetDirectory = normalizeDatabaseDirectory(databaseDirectoryOverride || await getConfiguredDatabaseDirectory()) || await getDefaultDatabaseDirectory();
-    console.info('[PharmaCare DB] initializing SQLite path:', targetDirectory);
-    await ensureDatabaseDirectoryExists(targetDirectory);
-    const dbFilePath = buildDatabaseFilePath(targetDirectory);
-    console.info('[PharmaCare DB] SQLite file target:', dbFilePath);
+    const configuredDirectory = normalizeDatabaseDirectory(databaseDirectoryOverride || await getConfiguredDatabaseDirectory()) || await getDefaultDatabaseDirectory();
+    const targetDirectory = normalizeDatabaseDirectory(configuredDirectory);
+    const safeDirectory = targetDirectory.replace(/\\/g, '/');
 
-    const fs = await import('@tauri-apps/plugin-fs');
-    const exists = fs?.exists || fs?.default?.exists;
-    const fileExists = typeof exists === 'function' ? await exists(dbFilePath.replace(/\\/g, '/')).catch(() => false) : false;
-    console.info('[PharmaCare DB] file exists before load:', fileExists, 'path:', dbFilePath);
+    console.info('[PharmaCare DB] initializing native SQLite path:', safeDirectory);
+    await ensureDatabaseDirectoryExists(safeDirectory);
+    await invoke('set_db_location', { path: safeDirectory });
 
-    const db = await Database.load(toSqliteUri(dbFilePath));
-    console.info('[PharmaCare DB] SQLite connection opened successfully for:', dbFilePath);
+    const executeNativeSql = async (sql, params = []) => {
+      const values = Array.isArray(params) ? params : [params];
+      return invoke('execute_sql', {
+        sql: String(sql),
+        params: values.map((value) => value ?? null),
+      });
+    };
 
-    const executeScript = async (script) => {
-      const statements = String(script)
-        .split(';')
-        .map((statement) => statement.trim())
-        .filter(Boolean);
+    const callSelectAll = async (sql, params = []) => {
+      const values = Array.isArray(params) ? params : [params];
+      const rows = await invoke('select_sql_all', {
+        sql: String(sql),
+        params: values.map((value) => value ?? null),
+      });
+      return Array.isArray(rows) ? rows : [];
+    };
 
-      for (const statement of statements) {
-        await db.execute(statement);
-      }
+    const callSelectGet = async (sql, params = []) => {
+      const values = Array.isArray(params) ? params : [params];
+      const row = await invoke('select_sql_get', {
+        sql: String(sql),
+        params: values.map((value) => value ?? null),
+      });
+      return row ?? null;
     };
 
     return {
       async init() {
         try {
-          const targetFile = buildDatabaseFilePath(await getConfiguredDatabaseDirectory());
-          if (typeof window !== 'undefined' && window.__TAURI__) {
-            console.info('[PharmaCare] SQLite path:', targetFile);
-          }
+          const location = await invoke('get_db_location');
+          console.info('[PharmaCare] SQLite path:', location);
         } catch {
           // ignore path logging failures in the browser shell
-        }
-
-        try {
-          await executeScript(MEDICINES_SCHEMA_SQL);
-        } catch {
-          // Tauri plugin handles table creation idempotently; explicit schema creation here is minimal
         }
         return true;
       },
       async reset() {
         try {
-          await executeScript('DELETE FROM purchase_order_items; DELETE FROM purchase_orders; DELETE FROM sale_items; DELETE FROM sales; DELETE FROM medicines; DELETE FROM suppliers; DELETE FROM batches; DELETE FROM settings;');
+          const resetSql = 'DELETE FROM purchase_order_items; DELETE FROM purchase_orders; DELETE FROM sale_items; DELETE FROM sales; DELETE FROM medicines; DELETE FROM suppliers; DELETE FROM batches; DELETE FROM settings;';
+          await executeNativeSql(resetSql);
         } catch {
           // keep resets safe for first-run databases
         }
         return true;
       },
       async all(sql, params = []) {
-        const values = Array.isArray(params) ? params : [params];
-        const rows = await db.select(sql, values);
-        return Array.isArray(rows) ? rows : [];
+        return callSelectAll(sql, params);
       },
       async get(sql, params = []) {
-        const values = Array.isArray(params) ? params : [params];
-        const rows = await db.select(sql, values);
-        return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+        return callSelectGet(sql, params);
       },
       async run(sql, params = []) {
         const values = Array.isArray(params) ? params : [params];
-        const result = await db.execute(sql, values);
-        return { lastID: result?.lastInsertId ?? null, changes: result?.changes ?? 0 };
+        const result = await executeNativeSql(sql, values);
+        return {
+          lastID: result?.lastInsertId ?? null,
+          changes: result?.changes ?? 0,
+        };
       },
     };
   } catch {
@@ -1014,6 +1026,18 @@ async function init(driverOverride) {
 async function setDatabaseLocation(directoryPath, options = {}) {
   const { moveExisting = false } = options;
   const nextDirectory = normalizeDatabaseDirectory(directoryPath) || (await getDefaultDatabaseDirectory());
+
+  if (!isTauriRuntime()) {
+    const finalPath = normalizeDatabaseDirectory(nextDirectory);
+    const finalFilePath = buildDatabaseFilePath(finalPath);
+    await persistDatabaseDirectory(finalPath);
+    console.info('[PharmaCare DB] Browser fallback: database path updated without native Tauri IPC.', { finalPath, finalFilePath });
+    return {
+      path: finalPath,
+      filePath: finalFilePath,
+    };
+  }
+
   const currentDirectory = await getConfiguredDatabaseDirectory();
   const currentDatabaseFile = buildDatabaseFilePath(currentDirectory);
   const nextDatabaseFile = buildDatabaseFilePath(nextDirectory);
@@ -1031,7 +1055,7 @@ async function setDatabaseLocation(directoryPath, options = {}) {
     try {
       const fs = await import('@tauri-apps/plugin-fs');
       const exists = fs?.exists || fs?.default?.exists;
-      const sourceExists = typeof window !== 'undefined' && window.__TAURI__ && typeof exists === 'function'
+      const sourceExists = typeof window !== 'undefined' && isTauriRuntime() && typeof exists === 'function'
         ? await exists(currentDatabaseFile).catch(() => false)
         : false;
 
@@ -1064,8 +1088,14 @@ async function setDatabaseLocation(directoryPath, options = {}) {
 }
 
 async function pickDatabaseDirectory(currentPath = '') {
-  if (typeof window === 'undefined' || !window.__TAURI__) {
-    return null;
+  if (!isTauriRuntime()) {
+    const fallbackPath = normalizeDatabaseDirectory(currentPath) || await getCurrentDatabaseDirectory();
+    if (!fallbackPath) {
+      return null;
+    }
+    await persistDatabaseDirectory(fallbackPath);
+    console.info('[PharmaCare DB] Browser fallback: selected database directory.', fallbackPath);
+    return fallbackPath;
   }
 
   try {

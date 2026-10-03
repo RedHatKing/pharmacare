@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useInventory } from '../context/InventoryContext';
+import dbService from '../services/dbService';
 import {
   Settings as SettingsIcon,
   Download,
@@ -9,6 +10,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Database,
+  FolderOpen,
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -23,11 +25,35 @@ export const Settings: React.FC = () => {
   const [gstNumber, setGstNumber] = useState(settings.gstNumber);
   const [currencySymbol, setCurrencySymbol] = useState(settings.currencySymbol);
   const [defaultTaxRate, setDefaultTaxRate] = useState(String(settings.defaultTaxRate));
+  const [databaseDirectory, setDatabaseDirectory] = useState('E:/PharmaCare Database');
+  const [databaseDirectoryBusy, setDatabaseDirectoryBusy] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showRestoreWarning, setShowRestoreWarning] = useState(false);
   const [pendingRestoreData, setPendingRestoreData] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadDatabaseDirectory = async () => {
+      try {
+        const currentDirectory = await dbService.getCurrentDatabaseDirectory();
+        if (isMounted && currentDirectory) {
+          setDatabaseDirectory(currentDirectory);
+        }
+      } catch {
+        if (isMounted) {
+          setDatabaseDirectory('E:/PharmaCare Database');
+        }
+      }
+    };
+
+    void loadDatabaseDirectory();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handleDbError = (event: Event) => {
@@ -100,6 +126,59 @@ export const Settings: React.FC = () => {
     setTimeout(() => setNotification(null), 4000);
   };
 
+  const handleBrowseDatabaseDirectory = async () => {
+    try {
+      const pickedPath = await dbService.pickDatabaseDirectory(databaseDirectory || 'E:/PharmaCare Database');
+      if (pickedPath) {
+        setDatabaseDirectory(pickedPath);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to browse the selected database folder.';
+      setNotification({ type: 'error', message });
+      setTimeout(() => setNotification(null), 4000);
+    }
+  };
+
+  const handleSaveDatabaseDirectory = async () => {
+    const nextPath = (databaseDirectory || 'E:/PharmaCare Database').trim();
+    if (!nextPath) {
+      setNotification({ type: 'error', message: 'A database folder path is required.' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+
+    setDatabaseDirectoryBusy(true);
+    try {
+      const result = await dbService.setDatabaseLocation(nextPath, { moveExisting: false });
+      const resolvedPath = result?.path || nextPath;
+      setDatabaseDirectory(resolvedPath);
+      setNotification({ type: 'success', message: `Database storage updated: ${resolvedPath}` });
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The database folder could not be saved.';
+      setNotification({ type: 'error', message });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setDatabaseDirectoryBusy(false);
+    }
+  };
+
+  const handleResetDatabaseDirectory = async () => {
+    setDatabaseDirectoryBusy(true);
+    try {
+      const defaultPath = await dbService.resetDatabaseDirectory();
+      const resolvedPath = defaultPath || 'E:/PharmaCare Database';
+      setDatabaseDirectory(resolvedPath);
+      setNotification({ type: 'success', message: `Database directory reset to ${resolvedPath}` });
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'The database directory could not be reset.';
+      setNotification({ type: 'error', message });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setDatabaseDirectoryBusy(false);
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
@@ -177,6 +256,61 @@ export const Settings: React.FC = () => {
               className="hidden"
             />
           </label>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 p-5">
+        <div className="mb-4 pb-2 border-b border-slate-200 dark:border-slate-800">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
+            <Database className="w-4 h-4 text-emerald-700" />
+            <span>DATABASE LOCATION & STORAGE</span>
+          </h3>
+          <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+            Choose where PharmaCare keeps pharmacare.db and reload the SQLite database driver.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
+              CURRENT DATABASE DIRECTORY
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              <input
+                type="text"
+                value={databaseDirectory}
+                onChange={(e) => setDatabaseDirectory(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs font-mono bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-hidden focus:border-emerald-700"
+              />
+              <button
+                type="button"
+                onClick={handleBrowseDatabaseDirectory}
+                className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-2"
+              >
+                <FolderOpen className="w-3.5 h-3.5 text-emerald-700" />
+                <span>BROWSE FOLDER</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2.5 pt-1">
+            <button
+              type="button"
+              onClick={handleSaveDatabaseDirectory}
+              disabled={databaseDirectoryBusy}
+              className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white bg-emerald-700 hover:bg-emerald-800 border border-emerald-800 disabled:opacity-60"
+            >
+              SAVE PATH
+            </button>
+            <button
+              type="button"
+              onClick={handleResetDatabaseDirectory}
+              disabled={databaseDirectoryBusy}
+              className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 border border-slate-300 dark:border-slate-700 disabled:opacity-60"
+            >
+              RESET TO DEFAULT PATH
+            </button>
+          </div>
         </div>
       </div>
 
