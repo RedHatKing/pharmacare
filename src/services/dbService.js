@@ -214,11 +214,28 @@ const normalizeSettingsRow = (row = {}) => ({
 
 const DEFAULT_DATABASE_FILE_NAME = 'pharmacare.db';
 const DATABASE_PATH_STORAGE_KEY = 'pharma_database_directory_v1';
+const DEFAULT_WINDOWS_DATABASE_DIRECTORY = 'E:\\PharmaCare Database';
 
 const normalizeDatabaseDirectory = (directoryPath = '') => {
   const value = String(directoryPath ?? '').trim().replace(/['"]/g, '');
   if (!value) return '';
   return value.replace(/[\\/]+$/, '');
+};
+
+const ensureDatabaseDirectoryExists = async (directoryPath = '') => {
+  const targetDirectory = normalizeDatabaseDirectory(directoryPath);
+  if (!targetDirectory) return null;
+
+  try {
+    const fs = await import('@tauri-apps/plugin-fs');
+    const mkdir = fs?.mkdir || fs?.default?.mkdir;
+    if (typeof mkdir === 'function') {
+      await mkdir(targetDirectory.replace(/\\/g, '/'), { recursive: true });
+    }
+    return targetDirectory;
+  } catch {
+    return null;
+  }
 };
 
 const buildDatabaseFilePath = (directoryPath = '') => {
@@ -238,18 +255,30 @@ const toSqliteUri = (databaseFilePath = '') => {
 };
 
 const getDefaultDatabaseDirectory = async () => {
-  try {
-    if (typeof window !== 'undefined' && window.__TAURI__) {
+  if (typeof window !== 'undefined' && window.__TAURI__) {
+    try {
+      const fs = await import('@tauri-apps/plugin-fs');
+      const exists = fs?.exists || fs?.default?.exists;
+      const hasEDrive = typeof exists === 'function' ? await exists('E:/').catch(() => false) : false;
+
+      if (hasEDrive) {
+        return normalizeDatabaseDirectory(DEFAULT_WINDOWS_DATABASE_DIRECTORY) || 'E:/PharmaCare Database';
+      }
+    } catch {
+      // fall through to app-data fallback below
+    }
+
+    try {
       const { appDataDir } = await import('@tauri-apps/api/path');
       const basePath = await appDataDir();
       const normalized = normalizeDatabaseDirectory(String(basePath).replace(/\\/g, '/'));
       return `${normalized}/pharmacare`;
+    } catch {
+      // ignore and fall back below
     }
-  } catch {
-    // ignore and fall back below
   }
 
-  return 'pharmacare';
+  return normalizeDatabaseDirectory(DEFAULT_WINDOWS_DATABASE_DIRECTORY) || 'E:/PharmaCare Database';
 };
 
 const getConfiguredDatabaseDirectory = async () => {
@@ -767,6 +796,7 @@ const createTauriSqliteDriver = async (databaseDirectoryOverride = null) => {
     if (!Database || typeof Database.load !== 'function') return null;
 
     const targetDirectory = normalizeDatabaseDirectory(databaseDirectoryOverride || await getConfiguredDatabaseDirectory()) || await getDefaultDatabaseDirectory();
+    await ensureDatabaseDirectoryExists(targetDirectory);
     const dbFilePath = buildDatabaseFilePath(targetDirectory);
     const db = await Database.load(toSqliteUri(dbFilePath));
     const executeScript = async (script) => {
@@ -897,6 +927,8 @@ async function setDatabaseLocation(directoryPath, options = {}) {
   const currentDirectory = await getConfiguredDatabaseDirectory();
   const currentDatabaseFile = buildDatabaseFilePath(currentDirectory);
   const nextDatabaseFile = buildDatabaseFilePath(nextDirectory);
+
+  await ensureDatabaseDirectoryExists(nextDirectory);
 
   if (moveExisting && currentDatabaseFile !== nextDatabaseFile) {
     try {

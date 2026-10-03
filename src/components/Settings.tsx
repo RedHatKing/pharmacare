@@ -28,6 +28,7 @@ export const Settings: React.FC = () => {
   const [currencySymbol, setCurrencySymbol] = useState(settings.currencySymbol);
   const [defaultTaxRate, setDefaultTaxRate] = useState(String(settings.defaultTaxRate));
   const [databasePath, setDatabasePath] = useState(settings.databasePath || '');
+  const [isSavingDatabasePath, setIsSavingDatabasePath] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showRestoreWarning, setShowRestoreWarning] = useState(false);
   const [pendingRestoreData, setPendingRestoreData] = useState<string | null>(null);
@@ -176,6 +177,30 @@ export const Settings: React.FC = () => {
     }
   };
 
+  const saveDatabaseDirectory = async (pathOverride?: string) => {
+    const nextValue = (pathOverride ?? databasePath ?? '').trim();
+    const targetDirectory = nextValue || (await dbService.getDefaultDatabaseDirectory());
+
+    setIsSavingDatabasePath(true);
+    try {
+      const result = await dbService.setDatabaseLocation(targetDirectory, { moveExisting: true });
+      setDatabasePath(result.path);
+      updateSettings({ databasePath: result.path });
+      setNotification({
+        type: 'success',
+        message: 'Database location saved and updated.',
+      });
+    } catch (error: any) {
+      setNotification({
+        type: 'error',
+        message: error?.message || 'The selected folder is not writable or not accessible.',
+      });
+    } finally {
+      setIsSavingDatabasePath(false);
+      setTimeout(() => setNotification(null), 4000);
+    }
+  };
+
   const confirmDatabasePathChange = async () => {
     if (!pendingDatabasePath) return;
 
@@ -294,7 +319,15 @@ export const Settings: React.FC = () => {
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 value={databasePath || settings.databasePath || ''}
-                readOnly
+                onChange={(e) => setDatabasePath(e.target.value)}
+                onBlur={() => { void saveDatabaseDirectory(); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void saveDatabaseDirectory();
+                  }
+                }}
+                placeholder="E:\\PharmaCare Database"
                 className="w-full px-2.5 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
               />
               <button
@@ -309,6 +342,15 @@ export const Settings: React.FC = () => {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2">
+            <button
+              type="button"
+              onClick={() => { void saveDatabaseDirectory(); }}
+              disabled={isSavingDatabasePath}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white bg-emerald-700 hover:bg-emerald-800 border border-emerald-800 disabled:opacity-60"
+            >
+              {isSavingDatabasePath ? 'Saving...' : 'Save Path'}
+            </button>
+
             <button
               type="button"
               onClick={handleBrowseDatabaseFolder}
