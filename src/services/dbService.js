@@ -887,7 +887,7 @@ const createTauriSqliteDriver = async (databaseDirectoryOverride = null) => {
 
     const db = await Database.load(toSqliteUri(dbFilePath));
     console.info('[PharmaCare DB] SQLite connection opened successfully for:', dbFilePath);
-    return db;
+
     const executeScript = async (script) => {
       const statements = String(script)
         .split(';')
