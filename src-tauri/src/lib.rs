@@ -48,7 +48,7 @@ fn normalize_directory_path(path: &str) -> Result<String, String> {
         ));
     }
 
-    Ok(trimmed)
+    Ok(trimmed.to_string())
 }
 
 fn resolve_database_directory(path: &str) -> Result<PathBuf, String> {
