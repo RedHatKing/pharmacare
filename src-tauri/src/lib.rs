@@ -1,11 +1,14 @@
 #[tauri::command]
 fn create_database_dir(path: String) -> Result<String, String> {
-    let trimmed = path.trim();
+    let normalized = path.trim().replace('\\', "/");
+    let trimmed = normalized.trim();
+
     if trimmed.is_empty() {
         return Err("Database path is empty.".to_string());
     }
 
-    std::fs::create_dir_all(trimmed).map_err(|error| {
+    let directory = std::path::Path::new(trimmed);
+    std::fs::create_dir_all(directory).map_err(|error| {
         format!("Failed to create database directory '{}': {}", trimmed, error)
     })?;
 

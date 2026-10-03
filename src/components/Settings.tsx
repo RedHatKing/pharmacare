@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useInventory } from '../context/InventoryContext';
-import dbService from '../services/dbService';
 import {
   Settings as SettingsIcon,
   Download,
@@ -10,9 +9,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Database,
-  FolderOpen,
-  Copy,
-  RotateCcw,
 } from 'lucide-react';
 
 export const Settings: React.FC = () => {
@@ -27,45 +23,11 @@ export const Settings: React.FC = () => {
   const [gstNumber, setGstNumber] = useState(settings.gstNumber);
   const [currencySymbol, setCurrencySymbol] = useState(settings.currencySymbol);
   const [defaultTaxRate, setDefaultTaxRate] = useState(String(settings.defaultTaxRate));
-  const [databasePath, setDatabasePath] = useState(settings.databasePath || '');
-  const [isSavingDatabasePath, setIsSavingDatabasePath] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [showRestoreWarning, setShowRestoreWarning] = useState(false);
   const [pendingRestoreData, setPendingRestoreData] = useState<string | null>(null);
-  const [showDatabaseWarning, setShowDatabaseWarning] = useState(false);
-  const [pendingDatabasePath, setPendingDatabasePath] = useState<string>('');
-  const [moveExistingDatabase, setMoveExistingDatabase] = useState(true);
-  const [isUpdatingDatabaseLocation, setIsUpdatingDatabaseLocation] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const nextPath = settings.databasePath ?? '';
-    setDatabasePath(nextPath);
-  }, [settings.databasePath]);
-
-  useEffect(() => {
-    let isActive = true;
-
-    const loadPath = async () => {
-      try {
-        const currentPath = await dbService.getCurrentDatabaseDirectory();
-        if (isActive && !settings.databasePath) {
-          setDatabasePath(currentPath);
-        }
-      } catch {
-        if (isActive && !settings.databasePath) {
-          setDatabasePath('');
-        }
-      }
-    };
-
-    void loadPath();
-
-    return () => {
-      isActive = false;
-    };
-  }, [settings.databasePath]);
 
   useEffect(() => {
     const handleDbError = (event: Event) => {
@@ -138,105 +100,6 @@ export const Settings: React.FC = () => {
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const handleCopyDatabasePath = async () => {
-    let pathToCopy = databasePath || '';
-
-    if (!pathToCopy) {
-      try {
-        pathToCopy = await dbService.getCurrentDatabaseDirectory();
-      } catch {
-        pathToCopy = '';
-      }
-    }
-
-    if (!pathToCopy) return;
-
-    try {
-      await navigator.clipboard.writeText(pathToCopy);
-      setNotification({ type: 'success', message: 'Database path copied to clipboard.' });
-    } catch {
-      setNotification({ type: 'error', message: 'Unable to copy database path. Please copy it manually.' });
-    }
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  const handleBrowseDatabaseFolder = async () => {
-    try {
-      const currentDirectory = databasePath || (await dbService.getCurrentDatabaseDirectory());
-      const selectedDirectory = await dbService.pickDatabaseDirectory(currentDirectory);
-      if (!selectedDirectory) {
-        return;
-      }
-
-      setPendingDatabasePath(selectedDirectory);
-      setMoveExistingDatabase(true);
-      setShowDatabaseWarning(true);
-    } catch {
-      setNotification({ type: 'error', message: 'The folder picker could not be opened.' });
-      setTimeout(() => setNotification(null), 3000);
-    }
-  };
-
-  const handleResetDatabaseLocation = async () => {
-    try {
-      const defaultDirectory = await dbService.getDefaultDatabaseDirectory();
-      setPendingDatabasePath(defaultDirectory);
-      setMoveExistingDatabase(true);
-      setShowDatabaseWarning(true);
-    } catch {
-      setNotification({ type: 'error', message: 'Could not resolve the default database path.' });
-      setTimeout(() => setNotification(null), 3000);
-    }
-  };
-
-  const saveDatabaseDirectory = async (pathOverride?: string) => {
-    const nextValue = (pathOverride ?? databasePath ?? '').trim();
-    const targetDirectory = nextValue || (await dbService.getDefaultDatabaseDirectory());
-
-    setIsSavingDatabasePath(true);
-    try {
-      const result = await dbService.setDatabaseLocation(targetDirectory, { moveExisting: true });
-      setDatabasePath(result.path);
-      updateSettings({ databasePath: result.path });
-      setNotification({
-        type: 'success',
-        message: 'Database location saved and updated.',
-      });
-    } catch (error: any) {
-      setNotification({
-        type: 'error',
-        message: error?.message || 'The selected folder is not writable or not accessible.',
-      });
-    } finally {
-      setIsSavingDatabasePath(false);
-      setTimeout(() => setNotification(null), 4000);
-    }
-  };
-
-  const confirmDatabasePathChange = async () => {
-    if (!pendingDatabasePath) return;
-
-    setIsUpdatingDatabaseLocation(true);
-    try {
-      const result = await dbService.setDatabaseLocation(pendingDatabasePath, { moveExisting: moveExistingDatabase });
-      setDatabasePath(result.path);
-      updateSettings({ databasePath: result.path });
-      setNotification({
-        type: 'success',
-        message: 'Database location saved. Restart the app or reconnect to apply the new path.',
-      });
-    } catch (error: any) {
-      setNotification({
-        type: 'error',
-        message: error?.message || 'The selected folder is not writable or not accessible.',
-      });
-    } finally {
-      setIsUpdatingDatabaseLocation(false);
-      setShowDatabaseWarning(false);
-      setPendingDatabasePath('');
-      setTimeout(() => setNotification(null), 4000);
-    }
-  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
@@ -314,77 +177,6 @@ export const Settings: React.FC = () => {
               className="hidden"
             />
           </label>
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-800 p-5">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white mb-4 pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-1.5">
-          <Database className="w-4 h-4 text-emerald-700" />
-          <span>Database Location & Storage</span>
-        </h3>
-
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1">
-              Current Database Directory
-            </label>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                value={databasePath || settings.databasePath || ''}
-                onChange={(e) => setDatabasePath(e.target.value)}
-                onBlur={() => { void saveDatabaseDirectory(); }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    void saveDatabaseDirectory();
-                  }
-                }}
-                placeholder="E:\\PharmaCare Database"
-                className="w-full px-2.5 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white"
-              />
-              <button
-                type="button"
-                onClick={handleCopyDatabasePath}
-                className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                Copy Path
-              </button>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-2">
-            <button
-              type="button"
-              onClick={() => { void saveDatabaseDirectory(); }}
-              disabled={isSavingDatabasePath}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white bg-emerald-700 hover:bg-emerald-800 border border-emerald-800 disabled:opacity-60"
-            >
-              {isSavingDatabasePath ? 'Saving...' : 'Save Path'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleBrowseDatabaseFolder}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-white bg-emerald-700 hover:bg-emerald-800 border border-emerald-800"
-            >
-              <FolderOpen className="w-3.5 h-3.5" />
-              Browse Folder
-            </button>
-
-            <button
-              type="button"
-              onClick={handleResetDatabaseLocation}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Reset to Default Path
-            </button>
-          </div>
-
-          <p className="text-[11px] text-slate-500 font-mono leading-relaxed">
-            Store your SQLite database on a removable drive such as D: or E: to reduce the risk of data loss during Windows reinstallations. The app creates a <span className="font-semibold text-slate-700 dark:text-slate-200">pharmacare.db</span> file inside the selected directory.
-          </p>
         </div>
       </div>
 
@@ -562,51 +354,6 @@ export const Settings: React.FC = () => {
         </div>
       )}
 
-      {showDatabaseWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-xs p-4">
-          <div className="bg-white dark:bg-slate-900 border-2 border-slate-400 dark:border-slate-700 p-5 max-w-lg w-full shadow-2xl">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4" />
-              <span>Database location warning</span>
-            </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
-              Changing database path requires restarting the application or reconnecting to the database.
-            </p>
-            <div className="mt-3 rounded border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 p-2 text-xs text-amber-900 dark:text-amber-200 font-mono">
-              {pendingDatabasePath}
-            </div>
-            <label className="mt-4 flex items-start gap-2 text-xs text-slate-700 dark:text-slate-300">
-              <input
-                type="checkbox"
-                checked={moveExistingDatabase}
-                onChange={(e) => setMoveExistingDatabase(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>Move existing database to the new location</span>
-            </label>
-            <div className="mt-4 flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowDatabaseWarning(false);
-                  setPendingDatabasePath('');
-                }}
-                className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-800"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDatabasePathChange}
-                disabled={isUpdatingDatabaseLocation}
-                className="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-white bg-amber-700 hover:bg-amber-800 border border-amber-800 disabled:opacity-60"
-              >
-                {isUpdatingDatabaseLocation ? 'Saving...' : 'Confirm'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

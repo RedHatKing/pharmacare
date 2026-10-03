@@ -13,14 +13,18 @@
     "fs:default",
     "fs:allow-read",
     "fs:allow-write",
+    "fs:allow-create",
     "fs:allow-mkdir",
     "fs:allow-exists"
   ],
   "scope": {
     "allow": [
       "E:/**",
+      "E:\\**",
       "D:/**",
+      "D:\\**",
       "C:/**",
+      "C:\\**",
       "$APPDATA/**",
       "$DOCUMENT/**",
       "$HOME/**"

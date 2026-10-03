@@ -214,12 +214,18 @@ const normalizeSettingsRow = (row = {}) => ({
 
 const DEFAULT_DATABASE_FILE_NAME = 'pharmacare.db';
 const DATABASE_PATH_STORAGE_KEY = 'pharma_database_directory_v1';
-const DEFAULT_WINDOWS_DATABASE_DIRECTORY = 'E:\\PharmaCare Database';
+const DEFAULT_WINDOWS_DATABASE_DIRECTORY = 'E:/PharmaCare Database';
+const PREFERRED_DATABASE_DIRECTORY_CANDIDATES = [
+  'E:/PharmaCare Database',
+  'D:/PharmaCare Database',
+  'C:/PharmaCare Database',
+];
 
 const normalizeDatabaseDirectory = (directoryPath = '') => {
   const value = String(directoryPath ?? '').trim().replace(/['"]/g, '');
   if (!value) return '';
-  return value.replace(/[\\/]+$/, '');
+  const normalizedValue = value.replace(/\\/g, '/');
+  return normalizedValue.replace(/\/+$/, '');
 };
 
 const notifyDatabasePathError = (message, details = '') => {
@@ -249,7 +255,7 @@ const getFallbackDatabaseDirectories = async () => {
     }
   }
 
-  candidates.push('E:/PharmaCare Database', 'D:/PharmaCare Database', 'C:/PharmaCare Database');
+  candidates.push(...PREFERRED_DATABASE_DIRECTORY_CANDIDATES);
   return [...new Set(candidates.filter(Boolean))];
 };
 
@@ -259,9 +265,10 @@ const createDatabaseDirectoryWithRust = async (directoryPath = '') => {
     return targetDirectory;
   }
 
+  const normalizedPath = targetDirectory.replace(/\\/g, '/');
   const { invoke } = await import('@tauri-apps/api/core');
-  await invoke('create_database_dir', { path: targetDirectory });
-  return targetDirectory;
+  await invoke('create_database_dir', { path: normalizedPath });
+  return normalizedPath;
 };
 
 const ensureDatabaseDirectoryExists = async (directoryPath = '', options = {}) => {
@@ -319,13 +326,7 @@ const toSqliteUri = (databaseFilePath = '') => {
 
 const getDefaultDatabaseDirectory = async () => {
   if (typeof window !== 'undefined' && window.__TAURI__) {
-    const preferredCandidates = [
-      DEFAULT_WINDOWS_DATABASE_DIRECTORY,
-      'D:/PharmaCare Database',
-      'C:/PharmaCare Database',
-    ];
-
-    for (const candidate of preferredCandidates) {
+    for (const candidate of PREFERRED_DATABASE_DIRECTORY_CANDIDATES) {
       try {
         const created = await ensureDatabaseDirectoryExists(candidate, { suppressErrorEvent: true });
         if (created) return normalizeDatabaseDirectory(created);
