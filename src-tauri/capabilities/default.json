@@ -15,5 +15,15 @@
     "fs:allow-write",
     "fs:allow-mkdir",
     "fs:allow-exists"
-  ]
+  ],
+  "scope": {
+    "allow": [
+      "E:/**",
+      "D:/**",
+      "C:/**",
+      "$APPDATA/**",
+      "$DOCUMENT/**",
+      "$HOME/**"
+    ]
+  }
 }

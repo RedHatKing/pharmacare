@@ -228,44 +228,77 @@ const notifyDatabasePathError = (message, details = '') => {
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('pharmacare-db-error', { detail: errorMessage }));
-    try {
-      window.alert(errorMessage);
-    } catch {
-      // ignore alert failures in non-browser or restricted contexts
-    }
   }
 
   return errorMessage;
 };
 
-const ensureDatabaseDirectoryExists = async (directoryPath = '') => {
+const getFallbackDatabaseDirectories = async () => {
+  const candidates = [];
+
+  if (typeof window !== 'undefined' && window.__TAURI__) {
+    try {
+      const { appDataDir, documentDir } = await import('@tauri-apps/api/path');
+      const appDataPath = await appDataDir();
+      const documentsPath = await documentDir();
+
+      candidates.push(`${normalizeDatabaseDirectory(String(appDataPath).replace(/\\/g, '/'))}/PharmaCare`);
+      candidates.push(`${normalizeDatabaseDirectory(String(documentsPath).replace(/\\/g, '/'))}/PharmaCare`);
+    } catch {
+      // ignore path resolution errors and use the built-in fallback below
+    }
+  }
+
+  candidates.push('E:/PharmaCare Database', 'D:/PharmaCare Database', 'C:/PharmaCare Database');
+  return [...new Set(candidates.filter(Boolean))];
+};
+
+const createDatabaseDirectoryWithRust = async (directoryPath = '') => {
   const targetDirectory = normalizeDatabaseDirectory(directoryPath);
-  if (!targetDirectory) {
-    throw new Error('Database directory is empty.');
-  }
-
-  try {
-    const fs = await import('@tauri-apps/plugin-fs');
-    const mkdir = fs?.mkdir || fs?.default?.mkdir;
-    const exists = fs?.exists || fs?.default?.exists;
-
-    if (typeof mkdir === 'function') {
-      await mkdir(targetDirectory.replace(/\\/g, '/'), { recursive: true });
-    }
-
-    if (typeof exists === 'function') {
-      const directoryExists = await exists(targetDirectory.replace(/\\/g, '/')).catch(() => false);
-      if (!directoryExists) {
-        throw new Error(`Failed to create database directory: ${targetDirectory}`);
-      }
-    }
-
+  if (!targetDirectory || typeof window === 'undefined' || !window.__TAURI__) {
     return targetDirectory;
-  } catch (error) {
-    const reason = error?.message || 'Unknown filesystem error';
-    notifyDatabasePathError(`The database folder could not be created: ${targetDirectory}`, reason);
-    throw new Error(`The database folder could not be created: ${targetDirectory}. ${reason}`);
   }
+
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('create_database_dir', { path: targetDirectory });
+  return targetDirectory;
+};
+
+const ensureDatabaseDirectoryExists = async (directoryPath = '', options = {}) => {
+  const { suppressErrorEvent = false } = options;
+  const preferredDirectory = normalizeDatabaseDirectory(directoryPath);
+  const candidates = [preferredDirectory, ...(await getFallbackDatabaseDirectories())];
+
+  const uniqueCandidates = [...new Set(candidates.filter(Boolean))];
+  let lastError = null;
+
+  for (const candidate of uniqueCandidates) {
+    try {
+      if (typeof window !== 'undefined' && window.__TAURI__) {
+        await createDatabaseDirectoryWithRust(candidate);
+      } else {
+        const fs = await import('@tauri-apps/plugin-fs');
+        const mkdir = fs?.mkdir || fs?.default?.mkdir;
+        if (typeof mkdir === 'function') {
+          await mkdir(candidate.replace(/\\/g, '/'), { recursive: true });
+        }
+      }
+
+      return candidate;
+    } catch (error) {
+      lastError = error;
+      console.warn('[PharmaCare DB] directory creation failed for:', candidate, error);
+    }
+  }
+
+  const reason = lastError?.message || 'Unknown filesystem error';
+  const finalMessage = `The database folder could not be created: ${preferredDirectory || 'default database directory'}. ${reason}`;
+
+  if (!suppressErrorEvent) {
+    notifyDatabasePathError('The database folder could not be created.', finalMessage);
+  }
+
+  throw new Error(finalMessage);
 };
 
 const buildDatabaseFilePath = (directoryPath = '') => {
@@ -286,25 +319,41 @@ const toSqliteUri = (databaseFilePath = '') => {
 
 const getDefaultDatabaseDirectory = async () => {
   if (typeof window !== 'undefined' && window.__TAURI__) {
-    try {
-      const fs = await import('@tauri-apps/plugin-fs');
-      const exists = fs?.exists || fs?.default?.exists;
-      const hasEDrive = typeof exists === 'function' ? await exists('E:/').catch(() => false) : false;
+    const preferredCandidates = [
+      DEFAULT_WINDOWS_DATABASE_DIRECTORY,
+      'D:/PharmaCare Database',
+      'C:/PharmaCare Database',
+    ];
 
-      if (hasEDrive) {
-        return normalizeDatabaseDirectory(DEFAULT_WINDOWS_DATABASE_DIRECTORY) || 'E:/PharmaCare Database';
+    for (const candidate of preferredCandidates) {
+      try {
+        const created = await ensureDatabaseDirectoryExists(candidate, { suppressErrorEvent: true });
+        if (created) return normalizeDatabaseDirectory(created);
+      } catch {
+        // try the next preferred storage location quietly
       }
-    } catch {
-      // fall through to app-data fallback below
     }
 
     try {
       const { appDataDir } = await import('@tauri-apps/api/path');
       const basePath = await appDataDir();
       const normalized = normalizeDatabaseDirectory(String(basePath).replace(/\\/g, '/'));
-      return `${normalized}/pharmacare`;
+      const fallbackPath = `${normalized}/PharmaCare`;
+      await ensureDatabaseDirectoryExists(fallbackPath, { suppressErrorEvent: true });
+      return fallbackPath;
     } catch {
       // ignore and fall back below
+    }
+
+    try {
+      const { documentDir } = await import('@tauri-apps/api/path');
+      const basePath = await documentDir();
+      const normalized = normalizeDatabaseDirectory(String(basePath).replace(/\\/g, '/'));
+      const fallbackPath = `${normalized}/PharmaCare`;
+      await ensureDatabaseDirectoryExists(fallbackPath, { suppressErrorEvent: true });
+      return fallbackPath;
+    } catch {
+      // ignore and continue to the last resilient default
     }
   }
 
