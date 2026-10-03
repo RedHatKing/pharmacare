@@ -46,8 +46,8 @@ jobs:
       - name: Upload Windows bundle artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pharmacare-windows-bundle
+          name: PharmaCare-Windows-Installer
           path: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/**/release/bundle/nsis/*.exe
+            src-tauri/target/**/release/bundle/msi/*.msi
           if-no-files-found: error
